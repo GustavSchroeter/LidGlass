@@ -1,0 +1,59 @@
+name: Build LidGlass
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select latest Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Build (universal, ad-hoc signed)
+        run: |
+          xcodebuild \
+            -project LidGlass.xcodeproj \
+            -target LidGlass \
+            -configuration Release \
+            SYMROOT="$PWD/build" \
+            ARCHS="arm64 x86_64" \
+            ONLY_ACTIVE_ARCH=NO \
+            CODE_SIGN_IDENTITY=- \
+            CODE_SIGN_STYLE=Manual \
+            DEVELOPMENT_TEAM= \
+            build
+
+      - name: Zip app
+        run: |
+          cd build/Release
+          ditto -c -k --keepParent LidGlass.app "$GITHUB_WORKSPACE/LidGlass.zip"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: LidGlass
+          path: LidGlass.zip
+
+      - name: Publish release "latest"
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete latest --yes --cleanup-tag || true
+          gh release create latest LidGlass.zip \
+            --title "LidGlass (latest build)" \
+            --notes "Automatic build of commit ${GITHUB_SHA}. Unsigned (ad hoc) – see README for first launch." \
+            --target "${GITHUB_SHA}"
